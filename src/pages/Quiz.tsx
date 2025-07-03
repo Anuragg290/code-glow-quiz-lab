@@ -5,64 +5,73 @@ import { Clock, CheckCircle, XCircle, ArrowRight, ArrowLeft, Trophy } from 'luci
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
+import { useToast } from '@/hooks/use-toast';
 
-// Sample questions data - in a real app, this would come from an API
-const sampleQuestions = {
-  'programming-basics': [
-    {
-      id: 1,
-      question: "Which of the following is NOT a primitive data type in most programming languages?",
-      options: ["Integer", "Boolean", "String", "Array"],
-      correctAnswer: 3,
-      explanation: "Array is a composite data type that holds multiple values, while Integer, Boolean, and String are primitive types that hold single values."
-    },
-    {
-      id: 2,
-      question: "What does 'DRY' principle stand for in programming?",
-      options: ["Don't Repeat Yourself", "Data Requires Yielding", "Direct Resource Yielding", "Dynamic Resource Yielding"],
-      correctAnswer: 0,
-      explanation: "DRY stands for 'Don't Repeat Yourself' - a principle that encourages reducing repetition in code by abstracting common functionality."
-    },
-    {
-      id: 3,
-      question: "Which of these is the correct way to declare a constant in most C-style languages?",
-      options: ["var PI = 3.14", "const PI = 3.14", "let PI = 3.14", "constant PI = 3.14"],
-      correctAnswer: 1,
-      explanation: "The 'const' keyword is used to declare constants in most C-style languages like JavaScript, C++, and others."
-    }
-  ],
-  'algorithms': [
-    {
-      id: 1,
-      question: "What is the time complexity of binary search?",
-      options: ["O(n)", "O(log n)", "O(n²)", "O(1)"],
-      correctAnswer: 1,
-      explanation: "Binary search has O(log n) time complexity because it eliminates half of the remaining elements in each step."
-    },
-    {
-      id: 2,
-      question: "Which sorting algorithm has the best average-case time complexity?",
-      options: ["Bubble Sort", "Selection Sort", "Merge Sort", "Insertion Sort"],
-      correctAnswer: 2,
-      explanation: "Merge Sort has O(n log n) time complexity in all cases (best, average, and worst), making it consistently efficient."
-    }
-  ]
-};
+interface Question {
+  id: string;
+  question: string;
+  options: string[];
+  correct_answer: number;
+  explanation: string;
+}
+
+interface QuizCategory {
+  id: string;
+  name: string;
+  color: string;
+}
 
 const Quiz = () => {
   const { categoryId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { toast } = useToast();
+  
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [userAnswers, setUserAnswers] = useState<number[]>([]);
-  const [showResult, setShowResult] = useState(false);
   const [timeLeft, setTimeLeft] = useState(300); // 5 minutes
   const [isTimedMode, setIsTimedMode] = useState(true);
   const [quizCompleted, setQuizCompleted] = useState(false);
+  const [startTime] = useState(Date.now());
 
-  const questions = sampleQuestions[categoryId as keyof typeof sampleQuestions] || sampleQuestions['programming-basics'];
+  // Fetch quiz questions
+  const { data: questions = [], isLoading: questionsLoading } = useQuery({
+    queryKey: ['quiz-questions', categoryId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('quiz_questions')
+        .select('*')
+        .eq('category_id', categoryId)
+        .limit(10);
+
+      if (error) throw error;
+      return data as Question[];
+    },
+    enabled: !!categoryId,
+  });
+
+  // Fetch category info
+  const { data: category } = useQuery({
+    queryKey: ['quiz-category', categoryId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('quiz_categories')
+        .select('*')
+        .eq('id', categoryId)
+        .single();
+
+      if (error) throw error;
+      return data as QuizCategory;
+    },
+    enabled: !!categoryId,
+  });
+
   const totalQuestions = questions.length;
-  const progress = ((currentQuestion + 1) / totalQuestions) * 100;
+  const progress = totalQuestions > 0 ? ((currentQuestion + 1) / totalQuestions) * 100 : 0;
 
   useEffect(() => {
     if (isTimedMode && timeLeft > 0 && !quizCompleted) {
@@ -86,7 +95,6 @@ const Quiz = () => {
       if (currentQuestion < totalQuestions - 1) {
         setCurrentQuestion(currentQuestion + 1);
         setSelectedAnswer(userAnswers[currentQuestion + 1] ?? null);
-        setShowResult(false);
       } else {
         handleQuizComplete();
       }
@@ -97,18 +105,54 @@ const Quiz = () => {
     if (currentQuestion > 0) {
       setCurrentQuestion(currentQuestion - 1);
       setSelectedAnswer(userAnswers[currentQuestion - 1] ?? null);
-      setShowResult(false);
     }
   };
 
-  const handleQuizComplete = () => {
-    setQuizCompleted(true);
+  const handleQuizComplete = async () => {
+    if (!user || !categoryId) return;
+
+    const finalAnswers = [...userAnswers];
+    if (selectedAnswer !== null && currentQuestion < totalQuestions) {
+      finalAnswers[currentQuestion] = selectedAnswer;
+    }
+
+    const score = calculateScore(finalAnswers);
+    const timeTaken = Math.floor((Date.now() - startTime) / 1000);
+
+    try {
+      const { error } = await supabase
+        .from('quiz_attempts')
+        .insert({
+          user_id: user.id,
+          category_id: categoryId,
+          score,
+          total_questions: totalQuestions,
+          time_taken: timeTaken,
+          answers: finalAnswers,
+        });
+
+      if (error) throw error;
+
+      toast({
+        title: "Quiz completed!",
+        description: `You scored ${score}/${totalQuestions}`,
+      });
+
+      setQuizCompleted(true);
+    } catch (error) {
+      console.error('Error saving quiz attempt:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save quiz results",
+        variant: "destructive",
+      });
+    }
   };
 
-  const calculateScore = () => {
+  const calculateScore = (answers: number[]) => {
     let correct = 0;
-    userAnswers.forEach((answer, index) => {
-      if (answer === questions[index].correctAnswer) {
+    answers.forEach((answer, index) => {
+      if (questions[index] && answer === questions[index].correct_answer) {
         correct++;
       }
     });
@@ -121,8 +165,32 @@ const Quiz = () => {
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
+  if (questionsLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 flex items-center justify-center">
+        <div className="text-white text-xl">Loading questions...</div>
+      </div>
+    );
+  }
+
+  if (questions.length === 0) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 flex items-center justify-center">
+        <Card className="bg-gray-900/50 border-gray-800 max-w-md">
+          <CardContent className="text-center p-8">
+            <h2 className="text-white text-2xl mb-4">No Questions Available</h2>
+            <p className="text-gray-400 mb-6">This quiz category doesn't have any questions yet.</p>
+            <Button onClick={() => navigate('/')} className="bg-gradient-to-r from-purple-600 to-blue-600">
+              Back to Home
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (quizCompleted) {
-    const score = calculateScore();
+    const score = calculateScore(userAnswers);
     const percentage = (score / totalQuestions) * 100;
 
     return (
@@ -145,7 +213,7 @@ const Quiz = () => {
               <div className="space-y-6">
                 {questions.map((question, index) => {
                   const userAnswer = userAnswers[index];
-                  const isCorrect = userAnswer === question.correctAnswer;
+                  const isCorrect = userAnswer === question.correct_answer;
                   
                   return (
                     <div key={question.id} className="border border-gray-700 rounded-lg p-4">
@@ -161,7 +229,7 @@ const Quiz = () => {
                             Your answer: {question.options[userAnswer]} 
                             {!isCorrect && (
                               <span className="text-green-400 ml-2">
-                                (Correct: {question.options[question.correctAnswer]})
+                                (Correct: {question.options[question.correct_answer]})
                               </span>
                             )}
                           </p>
@@ -174,6 +242,13 @@ const Quiz = () => {
               </div>
               
               <div className="flex gap-4 mt-8 justify-center">
+                <Button 
+                  onClick={() => navigate('/dashboard')} 
+                  variant="outline"
+                  className="border-purple-500/50 text-purple-400 hover:bg-purple-500/10"
+                >
+                  View Dashboard
+                </Button>
                 <Button 
                   onClick={() => navigate('/')} 
                   variant="outline"
@@ -194,6 +269,8 @@ const Quiz = () => {
       </div>
     );
   }
+
+  const currentQuestionData = questions[currentQuestion];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 p-4">
@@ -230,12 +307,12 @@ const Quiz = () => {
         <Card className="bg-gray-900/50 border-gray-800 mb-8">
           <CardHeader>
             <CardTitle className="text-2xl text-white leading-relaxed">
-              {questions[currentQuestion].question}
+              {currentQuestionData?.question}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {questions[currentQuestion].options.map((option, index) => (
+              {currentQuestionData?.options.map((option, index) => (
                 <button
                   key={index}
                   onClick={() => handleAnswerSelect(index)}
