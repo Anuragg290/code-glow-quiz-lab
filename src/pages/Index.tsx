@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { Brain, Code, Database, Shield, Globe, Cpu, Server, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useAuth } from '@/contexts/AuthContext';
+import UserMenu from '@/components/UserMenu';
 
 const quizCategories = [
   {
@@ -74,9 +76,15 @@ const quizCategories = [
 
 const Index = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900">
+      {/* Navigation */}
+      <div className="absolute top-4 right-4 z-10">
+        <UserMenu />
+      </div>
+
       {/* Hero Section */}
       <div className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-r from-purple-500/10 to-blue-500/10" />
@@ -90,21 +98,43 @@ const Index = () => {
               Test your knowledge, track your progress, and level up your skills.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center animate-fade-in">
-              <Button 
-                size="lg" 
-                className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white px-8 py-4 text-lg font-semibold transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-purple-500/25"
-                onClick={() => navigate('/dashboard')}
-              >
-                Start Learning
-              </Button>
-              <Button 
-                size="lg" 
-                variant="outline" 
-                className="border-2 border-purple-500/50 text-purple-400 hover:bg-purple-500/10 px-8 py-4 text-lg font-semibold transition-all duration-300 hover:scale-105"
-                onClick={() => navigate('/history')}
-              >
-                Explore CS History
-              </Button>
+              {user ? (
+                <>
+                  <Button 
+                    size="lg" 
+                    className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white px-8 py-4 text-lg font-semibold transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-purple-500/25"
+                    onClick={() => navigate('/dashboard')}
+                  >
+                    View Dashboard
+                  </Button>
+                  <Button 
+                    size="lg" 
+                    variant="outline" 
+                    className="border-2 border-purple-500/50 text-purple-400 hover:bg-purple-500/10 px-8 py-4 text-lg font-semibold transition-all duration-300 hover:scale-105"
+                    onClick={() => navigate('/history')}
+                  >
+                    Quiz History
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button 
+                    size="lg" 
+                    className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white px-8 py-4 text-lg font-semibold transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-purple-500/25"
+                    onClick={() => navigate('/auth')}
+                  >
+                    Get Started
+                  </Button>
+                  <Button 
+                    size="lg" 
+                    variant="outline" 
+                    className="border-2 border-purple-500/50 text-purple-400 hover:bg-purple-500/10 px-8 py-4 text-lg font-semibold transition-all duration-300 hover:scale-105"
+                    onClick={() => navigate('/history')}
+                  >
+                    Explore CS History
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -115,6 +145,11 @@ const Index = () => {
         <div className="text-center mb-16">
           <h2 className="text-4xl font-bold text-white mb-4">Choose Your Challenge</h2>
           <p className="text-xl text-gray-400">Select a category to start your quiz journey</p>
+          {!user && (
+            <p className="text-sm text-gray-500 mt-2">
+              Sign in to track your progress and save your scores
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
