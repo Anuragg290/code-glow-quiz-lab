@@ -13,7 +13,6 @@ interface QuizQuestion {
   options: string[];
   correct_answer: number;
   explanation: string;
-  category: string;
 }
 
 interface AnalysisRequest {
@@ -43,7 +42,7 @@ serve(async (req) => {
     ).map((question, index) => ({
       question: question.question,
       correctAnswer: question.options[question.correct_answer],
-      userAnswer: question.options[userAnswers[questions.indexOf(question)]],
+      userAnswer: userAnswers[questions.indexOf(question)] >= 0 ? question.options[userAnswers[questions.indexOf(question)]] : 'Not answered',
       explanation: question.explanation
     }));
 
