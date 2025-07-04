@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Clock, CheckCircle, XCircle, ArrowRight, ArrowLeft, Trophy } from 'lucide-react';
@@ -117,6 +118,11 @@ const Quiz = () => {
     if (selectedAnswer !== null && currentQuestion < totalQuestions) {
       finalAnswers[currentQuestion] = selectedAnswer;
     }
+    
+    // Ensure we have answers for all questions
+    while (finalAnswers.length < totalQuestions) {
+      finalAnswers.push(-1); // Use -1 for unanswered questions
+    }
 
     const score = calculateScore(finalAnswers);
     const timeTaken = Math.floor((Date.now() - startTime) / 1000);
@@ -141,18 +147,19 @@ const Quiz = () => {
       });
 
       setQuizCompleted(true);
+      setUserAnswers(finalAnswers);
 
-      // Trigger AI analysis if score is less than 80%
+      // Always trigger AI analysis for scores below 80%
       const percentage = (score / totalQuestions) * 100;
+      console.log('Quiz completed with score:', score, 'percentage:', percentage);
+      
       if (percentage < 80) {
+        console.log('Triggering AI analysis for low score');
         setAnalysisLoading(true);
         try {
           const { data: analysisData, error: analysisError } = await supabase.functions.invoke('analyze-quiz', {
             body: {
-              questions: questions.map(q => ({
-                ...q,
-                category: category?.name || 'Unknown'
-              })),
+              questions: questions,
               userAnswers: finalAnswers,
               categoryName: category?.name || 'Unknown',
               score,
@@ -160,10 +167,24 @@ const Quiz = () => {
             }
           });
 
-          if (analysisError) throw analysisError;
-          setAiAnalysis(analysisData);
+          console.log('AI analysis response:', analysisData, analysisError);
+
+          if (analysisError) {
+            console.error('Analysis error:', analysisError);
+            throw analysisError;
+          }
+          
+          if (analysisData) {
+            setAiAnalysis(analysisData);
+            console.log('AI analysis set:', analysisData);
+          }
         } catch (error) {
           console.error('Error getting AI analysis:', error);
+          toast({
+            title: "Analysis Error",
+            description: "Could not generate AI recommendations",
+            variant: "destructive",
+          });
         } finally {
           setAnalysisLoading(false);
         }
@@ -255,7 +276,7 @@ const Quiz = () => {
                         <div className="flex-1">
                           <p className="text-white font-medium mb-2">{question.question}</p>
                           <p className="text-sm text-gray-400 mb-2">
-                            Your answer: {question.options[userAnswer]} 
+                            Your answer: {userAnswer >= 0 ? question.options[userAnswer] : 'Not answered'} 
                             {!isCorrect && (
                               <span className="text-green-400 ml-2">
                                 (Correct: {question.options[question.correct_answer]})
@@ -295,8 +316,8 @@ const Quiz = () => {
             </CardContent>
           </Card>
 
-          {/* AI Recommendations */}
-          {(aiAnalysis || analysisLoading || percentage < 80) && (
+          {/* AI Recommendations - Always show for scores below 80% */}
+          {percentage < 80 && (
             <div className="mt-8">
               <AIRecommendations analysis={aiAnalysis} loading={analysisLoading} />
             </div>
