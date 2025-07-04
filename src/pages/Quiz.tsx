@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Clock, CheckCircle, XCircle, ArrowRight, ArrowLeft, Trophy } from 'lucide-react';
@@ -9,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
+import AIRecommendations from '@/components/AIRecommendations';
 
 interface Question {
   id: string;
@@ -37,6 +37,8 @@ const Quiz = () => {
   const [isTimedMode, setIsTimedMode] = useState(true);
   const [quizCompleted, setQuizCompleted] = useState(false);
   const [startTime] = useState(Date.now());
+  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
 
   // Fetch quiz questions
   const { data: questions = [], isLoading: questionsLoading } = useQuery({
@@ -139,6 +141,33 @@ const Quiz = () => {
       });
 
       setQuizCompleted(true);
+
+      // Trigger AI analysis if score is less than 80%
+      const percentage = (score / totalQuestions) * 100;
+      if (percentage < 80) {
+        setAnalysisLoading(true);
+        try {
+          const { data: analysisData, error: analysisError } = await supabase.functions.invoke('analyze-quiz', {
+            body: {
+              questions: questions.map(q => ({
+                ...q,
+                category: category?.name || 'Unknown'
+              })),
+              userAnswers: finalAnswers,
+              categoryName: category?.name || 'Unknown',
+              score,
+              totalQuestions
+            }
+          });
+
+          if (analysisError) throw analysisError;
+          setAiAnalysis(analysisData);
+        } catch (error) {
+          console.error('Error getting AI analysis:', error);
+        } finally {
+          setAnalysisLoading(false);
+        }
+      }
     } catch (error) {
       console.error('Error saving quiz attempt:', error);
       toast({
@@ -265,6 +294,13 @@ const Quiz = () => {
               </div>
             </CardContent>
           </Card>
+
+          {/* AI Recommendations */}
+          {(aiAnalysis || analysisLoading || percentage < 80) && (
+            <div className="mt-8">
+              <AIRecommendations analysis={aiAnalysis} loading={analysisLoading} />
+            </div>
+          )}
         </div>
       </div>
     );
